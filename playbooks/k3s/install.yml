@@ -1,0 +1,155 @@
+---
+- name: Include vars of from config.yml
+  hosts: master, workers
+  tasks:
+  - name:
+    ansible.builtin.include_vars:
+      file: config.yml
+      name: rollout_config
+
+- name: disable swap
+  hosts: master, workers
+  gather_facts: true
+
+  tasks:
+    - name: Disable swap imidiatly
+      shell: swapoff -a
+      become: true
+      become_method: sudo
+
+    - name: Disable swap on all nodes permanently (active at next reboot)
+      lineinfile: 
+        path: /etc/dphys-swapfile
+        regexp: '^CONF_SWAPSIZE=.*'
+        line: 'CONF_SWAPSIZE=0'
+      become: true
+      become_method: sudo
+
+
+- name: Check cgroup configuration masternode
+  hosts: master
+  gather_facts: no
+
+  tasks:
+    - name: Check if cgroup config is existing or not
+      shell: cat /boot/cmdline.txt
+      register: out
+      failed_when: false
+      changed_when: false
+
+    - name: configure cgroup-v2 if not existing (masternode)
+      lineinfile:
+        path: /boot/cmdline.txt
+        state: present
+        search_string: "{{ out.stdout }}"
+        line: "{{ out.stdout }} cgroup_enable=cpu_set cgroup_memory=1 cgroup_enable=memory"
+      when: "'cgroup_memory=1 cgroup_enable=memory' not in out.stdout"
+      become: true
+      become_method: sudo
+
+    - name: Execute if not existing, reboot, and wait for {{ rollout_config.reboottime }} seconds
+      shell: sleep 5 && shutdown -r now "Ansible Rebooting after cgroup configuration"
+      async: 0
+      poll: 0
+      ignore_unreachable: true
+      become: true
+      become_method: sudo
+      when: "'cgroup_memory=1 cgroup_enable=memory' not in out.stdout"
+    
+    - name: Waiting for server to come back
+      wait_for_connection:
+        delay: "{{ rollout_config.reboottime }}"
+      when: "'cgroup_memory=1 cgroup_enable=memory' not in out.stdout"
+
+
+- name: Check cgroup configuration workernode
+  hosts: workers
+  gather_facts: no
+
+  tasks:
+    - name: Check if cgroup config is existing or not
+      shell: cat /boot/firmware/cmdline.txt
+      register: out
+      failed_when: false
+      changed_when: false
+
+    - name: debug
+      debug: 
+        msg: "{{ out }}"
+        
+    - name: configure cgroup-v2 if not existing (workernode)
+      lineinfile:
+        path: /boot/firmware/cmdline.txt
+        state: present
+        search_string: "{{ out.stdout }}"
+        line: "{{ out.stdout }} cgroup_enable=cpu_set cgroup_memory=1 cgroup_enable=memory"
+      become: true
+      become_method: sudo
+      when: "'cgroup_memory=1 cgroup_enable=memory' not in out.stdout"
+      
+    - name: Execute if not existing, reboot, and wait for {{ rollout_config.reboottime }} seconds
+      shell: sleep 5 && shutdown -r now "Ansible Rebooting after cgroup configuration"
+      when: "'cgroup_memory=1 cgroup_enable=memory' not in out.stdout"
+      async: 0
+      poll: 0
+      ignore_unreachable: true
+      become: true
+      become_method: sudo
+      when: "'cgroup_memory=1 cgroup_enable=memory' not in out.stdout"
+    
+    - name: Waiting for server to come back
+      wait_for_connection:
+        delay: "{{ rollout_config.reboottime }}"
+      when: "'cgroup_memory=1 cgroup_enable=memory' not in out.stdout"
+
+
+- name: Master Node Configuration
+  hosts: master
+  gather_facts: no
+  
+  tasks:
+    - name: Install k3s in Master Node
+      shell: |
+              curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="server --disable=traefik --flannel-backend=host-gw --tls-san={{ ansible_default_ipv4.address }} --bind-address={{ ansible_default_ipv4.address }} --advertise-address={{ ansible_default_ipv4.address }} --node-ip={{ ansible_default_ipv4.address }} --cluster-init" sh -s -
+      become: true
+      become_method: sudo
+
+
+- name: Gather Node Token from Master Node 
+  hosts: master
+  gather_facts: no
+
+  tasks:
+    - name: Get the Node Token value from the Master
+      shell: cat /var/lib/rancher/k3s/server/node-token
+      become: true
+      become_method: sudo
+      register: nodeToken
+
+    - name: Add details to a dummy host
+      add_host:
+        name: "K3s_MASTER_DETAILS"
+        masterip: "{{ ansible_default_ipv4.address }}"
+        nodetoken: "{{ nodeToken.stdout }}"
+    
+- name: Install K3s in Worker nodes
+  hosts: workers
+  
+  tasks: 
+    - name: Installing K3s agents
+      shell: curl -sfL https://get.k3s.io | K3S_URL=https://{{ hostvars['K3s_MASTER_DETAILS']['masterip'] }}:6443 K3S_TOKEN="{{ hostvars['K3s_MASTER_DETAILS']['nodetoken'] }}" sh -
+      ignore_errors: true
+      become: true
+      become_method: sudo
+
+- name: Fetch kube-config-file from masternode to localhost to make cluster accessable via kubectl
+  hosts: master
+
+  tasks:
+    - name: fetching config
+      fetch: 
+        src: /etc/rancher/k3s/k3s.yaml
+        dest: ~/.kube/
+      become: true
+      become_method: sudo
+      tags: fetching
