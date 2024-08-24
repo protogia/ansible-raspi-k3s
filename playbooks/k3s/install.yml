@@ -118,7 +118,13 @@
 
   tasks:
     - name: rename & set env-var KUBECONFIG
-      command: "cp ~/.kube/k3s.yaml ~/.kube/config"
+      command: "mv ~/.kube/k3s.yaml ~/.kube/config"
       environment: 
         KUBECONFIG: ~/.kube/config
-      tags: loc
+      tags: fetching
+
+    - name: remove permissions for world & group
+      command: "chmod 0600 ~/.local/config"
+      become: true
+      become_method: sudo
+      tags: fetching
