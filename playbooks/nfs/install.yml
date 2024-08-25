@@ -1,7 +1,11 @@
 ---
-- name: Install NFS server on master nodes and NFS client on worker nodes
+- name: Install and configure NFS on master nodes and mount on worker nodes
   hosts: all
   become: yes
+  vars:
+    nfs_export_path: "/mnt/external_hdd"
+    nfs_mount_point: "/mnt/external_hdd"
+    nfs_options: "*(rw,sync,no_subtree_check)"
 
   tasks:
     - name: Install NFS server on master nodes
@@ -11,9 +15,33 @@
         update_cache: yes
       when: "'master' in group_names"
 
+    - name: Configure NFS export on master nodes
+      lineinfile:
+        path: /etc/exports
+        backup: yes
+        line: "{{ nfs_export_path }} {{ nfs_options }}"
+        create: yes
+      when: "'master' in group_names"
+
+    - name: Restart NFS server on master nodes
+      systemd:
+        name: nfs-kernel-server
+        state: restarted
+        enabled: yes
+      when: "'master' in group_names"
+
     - name: Install NFS client on worker nodes
       apt:
         name: nfs-common
         state: present
         update_cache: yes
+      when: "'workers' in group_names"
+
+    - name: Mount NFS share on worker nodes
+      mount:
+        src: "{{ hostvars[groups['master'][0]]['ansible_default_ipv4']['address'] }}:{{ nfs_export_path }}"
+        path: "{{ nfs_mount_point }}"
+        fstype: nfs
+        opts: defaults
+        state: mounted
       when: "'workers' in group_names"
