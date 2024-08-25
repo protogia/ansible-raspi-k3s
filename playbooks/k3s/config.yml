@@ -1,8 +1,2 @@
 # general
 reboottime: 120
-
-# pi
-# ...
-
-# k3s
-k3s_port: 10250
