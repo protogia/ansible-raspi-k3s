@@ -1,0 +1,91 @@
+#TODO
+
+#swapon
+#cgroup
+#uninstall
+#reboot
+
+---
+- name: Include vars of from config.yml
+  hosts: master, workers
+  tasks:
+  - name:
+    ansible.builtin.include_vars:
+      file: config.yml
+      name: rollout_config
+
+- name: disable swap
+  hosts: master, workers
+  gather_facts: true
+
+  tasks:
+    - name: Enable swap imidiatly
+      shell: swapon -a
+      become: true
+      become_method: sudo
+
+    - name: Enable swap on all nodes permanently and sets swap-size to raspbian-default-value (20) (active at next reboot)
+      lineinfile: 
+        path: /etc/dphys-swapfile
+        regexp: '^CONF_SWAPSIZE=.*'
+        line: 'CONF_SWAPSIZE={{ raspbian_swap_size }}'
+      become: true
+      become_method: sudo
+
+
+- name: Check cgroup configuration
+  hosts: master, workers
+  gather_facts: no
+
+  tasks:
+    - name: Check if cgroup config is existing or not
+      shell: cat /boot/firmware/cmdline.txt | grep console
+      register: out
+      failed_when: false
+      changed_when: false
+
+    - name: remove cgroup definition to setup raspberry-default
+      lineinfile:
+        path: /boot/firmware/cmdline.txt
+        state: present
+        search_string: "{{ out.stdout }}"
+        line: "{{ raspbian_bootcmdline }}"
+      become: true
+      become_method: sudo
+      when: "'cgroup_memory=1 cgroup_enable=memory' in out.stdout"
+
+    - name: Execute if not existing, reboot, and wait for {{ rollout_config.reboottime }} seconds
+      shell: sleep 5 && shutdown -r now "Ansible Rebooting after cgroup configuration"
+      async: 0
+      poll: 0
+      ignore_unreachable: true
+      become: true
+      become_method: sudo
+      when: "'cgroup_memory=1 cgroup_enable=memory' in out.stdout"
+
+    - name: Waiting for server to come back
+      wait_for_connection:
+        delay: "{{ rollout_config.reboottime }}"
+      when: "'cgroup_memory=1 cgroup_enable=memory' in out.stdout"
+
+- name: Master Node uninstall
+  hosts: master
+  gather_facts: no
+  
+  tasks:
+    - name: Uninstall k3s in Master Node
+      shell: |
+              /usr/bin/local/k3s-uninstall.sh
+      ignore_errors: true
+      become: true
+      become_method: sudo
+
+- name: Uninstall K3s on Worker nodes
+  hosts: workers
+  
+  tasks: 
+    - name: Uinstalling K3s agents
+      shell: /usr/bin/local/k3s-agent-uninstall.sh
+      ignore_errors: true
+      become: true
+      become_method: sudo
