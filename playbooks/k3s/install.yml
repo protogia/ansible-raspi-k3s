@@ -123,8 +123,6 @@
         KUBECONFIG: ~/.kube/config
       tags: fetching
 
-    - name: remove permissions for world & group
-      command: "chmod 0600 ~/.local/config"
-      become: true
-      become_method: sudo
+    - name: change permissions of localhost:~/.kube/config to 0600 (userwide). Type sudo-password for localhost.
+      command: "sudo chmod 0600 ~/.kube/config"
       tags: fetching
