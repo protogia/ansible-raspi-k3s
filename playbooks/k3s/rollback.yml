@@ -28,7 +28,7 @@
       lineinfile: 
         path: /etc/dphys-swapfile
         regexp: '^CONF_SWAPSIZE=.*'
-        line: 'CONF_SWAPSIZE={{ raspbian_swap_size }}'
+        line: 'CONF_SWAPSIZE={{ rollout_config.raspbian_swap_size }}'
       become: true
       become_method: sudo
 
@@ -49,7 +49,7 @@
         path: /boot/firmware/cmdline.txt
         state: present
         search_string: "{{ out.stdout }}"
-        line: "{{ raspbian_bootcmdline }}"
+        line: "{{ rollout_config.raspbian_bootcmdline }}"
       become: true
       become_method: sudo
       when: "'cgroup_memory=1 cgroup_enable=memory' in out.stdout"
