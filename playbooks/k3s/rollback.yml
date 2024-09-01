@@ -28,7 +28,7 @@
       lineinfile: 
         path: /etc/dphys-swapfile
         regexp: '^CONF_SWAPSIZE=.*'
-        line: 'CONF_SWAPSIZE={{ rollout_config.raspbian_swap_size }}'
+        line: 'CONF_SWAPSIZE=0'
       become: true
       become_method: sudo
 
