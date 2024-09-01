@@ -22,7 +22,7 @@
   tasks:
     - name: Uninstall k3s in Master Node
       shell: |
-              /usr/bin/local/k3s-uninstall.sh
+              /usr/local/bin/k3s-uninstall.sh
       ignore_errors: true
       become: true
       become_method: sudo
@@ -32,7 +32,7 @@
   
   tasks: 
     - name: Uinstalling K3s agents
-      shell: /usr/bin/local/k3s-agent-uninstall.sh
+      shell: /usr/local/bin/k3s-agent-uninstall.sh
       ignore_errors: true
       become: true
       become_method: sudo
@@ -43,19 +43,18 @@
   gather_facts: true
 
   tasks:
-    - name: Enable swap imidiatly
-      shell: swapon -a
-      become: true
-      become_method: sudo
-
     - name: Enable swap on all nodes permanently and sets swap-size to raspbian-default-value (20) (active at next reboot)
       lineinfile: 
         path: /etc/dphys-swapfile
         regexp: '^CONF_SWAPSIZE=.*'
-        line: 'CONF_SWAPSIZE=0'
+        line: 'CONF_SWAPSIZE={{rollout_config.raspbian_swap_size }}'
       become: true
       become_method: sudo
 
+    - name: Enable swap imidiatly
+      shell: swapon -a
+      become: true
+      become_method: sudo
 
 - name: Check cgroup configuration
   hosts: master, workers
