@@ -1,47 +1,101 @@
 ---
 - name: Install and configure NFS on master nodes and mount on worker nodes
-  hosts: all
+  hosts: master, workers
+  gather_facts: no
   become: yes
+  become_method: sudo
   vars:
     nfs_export_path: "/mnt/external_hdd"
     nfs_mount_point: "/mnt/external_hdd"
     nfs_options: "*(rw,sync,no_subtree_check)"
 
   tasks:
-    - name: Install NFS server on master nodes
-      apt:
-        name: nfs-kernel-server
-        state: present
-        update_cache: yes
-      when: "'master' in group_names"
+  - name: Ensure /mnt/external_hdd directory exists
+    file:
+      path: "{{ nfs_mount_point }}"
+      state: directory
+      mode: '0755'
 
-    - name: Configure NFS export on master nodes
-      lineinfile:
-        path: /etc/exports
-        backup: yes
-        line: "{{ nfs_export_path }} {{ nfs_options }}"
-        create: yes
-      when: "'master' in group_names"
+- name: mount storage on master-node
+  hosts: master
+  become: yes
+  become_method: sudo
+  vars:
+    nfs_export_path: "/mnt/external_hdd"
+    nfs_mount_point: "/mnt/external_hdd"
+    nfs_options: "*(rw,sync,no_subtree_check)"
+    
+  tasks:
+  - name: List available partitions
+    shell: "lsblk -np -o NAME,SIZE,TYPE | grep 'part'"
+    register: partitions_output
 
-    - name: Restart NFS server on master nodes
-      systemd:
-        name: nfs-kernel-server
-        state: restarted
-        enabled: yes
-      when: "'master' in group_names"
+  - name: Prompt for storage device
+    pause:
+      prompt: "Select partition to mount to {{ nfs_mount_point }}:\n{{ partitions_output.stdout }}: "
+    register: selected_device
 
-    - name: Install NFS client on worker nodes
-      apt:
-        name: nfs-common
-        state: present
-        update_cache: yes
-      when: "'workers' in group_names"
+  - name: Set the storage device
+    set_fact:
+      storage_device: "{{ selected_device.user_input | regex_replace(' ', '') }}"
 
-    - name: Mount NFS share on worker nodes
-      mount:
-        src: "{{ hostvars[groups['master'][0]]['ansible_default_ipv4']['address'] }}:{{ nfs_export_path }}"
-        path: "{{ nfs_mount_point }}"
-        fstype: nfs
-        opts: defaults
-        state: mounted
-      when: "'workers' in group_names"
+  - name: Detect filesystem type of the selected device
+    command: "blkid -o value -s TYPE {{ storage_device }}"
+    register: fs_type
+
+  - name: Mount selected storage device to /mnt/external_hdd
+    mount:
+      src: "{{ storage_device }}"
+      path: "{{ nfs_mount_point }}"
+      fstype: "{{ fs_type.stdout }}"
+      opts: defaults
+      state: mounted
+
+  - name: Install NFS server on master nodes
+    apt:
+      name: nfs-kernel-server
+      state: present
+      update_cache: yes
+
+  - name: Install NFS server on master nodes
+    apt:
+      name: nfs-kernel-server
+      state: present
+      update_cache: yes
+
+  - name: Configure NFS export on master nodes
+    lineinfile:
+      path: /etc/exports
+      backup: yes
+      line: "{{ nfs_export_path }} {{ nfs_options }}"
+      create: yes
+
+  - name: Restart NFS server on master nodes
+    systemd:
+      name: nfs-kernel-server
+      state: restarted
+      enabled: yes
+
+- name: install and setup nfs-client 
+  hosts: workers
+  become: yes
+  become_method: sudo
+  vars:
+    nfs_export_path: "/mnt/external_hdd"
+    nfs_mount_point: "/mnt/external_hdd"
+    nfs_options: "*(rw,sync,no_subtree_check)"
+  
+  tasks:
+  - name: Install NFS client on worker nodes
+    apt:
+      name: nfs-common
+      state: present
+      update_cache: yes
+
+  - name: Mount NFS share on worker nodes
+    mount:
+      src: "{{ hostvars[groups['master'][0]]['ansible_default_ipv4']['address'] }}:{{ nfs_export_path }}"
+      path: "{{ nfs_mount_point }}"
+      fstype: nfs
+      opts: defaults
+      state: mounted
