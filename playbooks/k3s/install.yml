@@ -1,11 +1,13 @@
 ---
 - name: Include vars of from config.yml
   hosts: master, workers
+
   tasks:
   - name:
     ansible.builtin.include_vars:
       file: config.yml
       name: rollout_config
+
 
 - name: disable swap
   hosts: master, workers
@@ -61,6 +63,7 @@
         delay: "{{ rollout_config.reboottime }}"
       when: "'cgroup_memory=1 cgroup_enable=memory' not in out.stdout"
 
+
 - name: Master Node Configuration
   hosts: master
   gather_facts: no
@@ -100,6 +103,7 @@
       become: true
       become_method: sudo
 
+
 - name: Fetch kube-config-file from masternode to localhost to make cluster accessable via kubectl
   hosts: master
 
@@ -112,6 +116,7 @@
       become: true
       become_method: sudo
       tags: fetching
+
 
 - name: Rename k3s.yml to "config" on localhost
   hosts: localhost
