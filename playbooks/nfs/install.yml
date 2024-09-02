@@ -16,6 +16,7 @@
       state: directory
       mode: '0755'
 
+
 - name: mount storage on master-node
   hosts: master
   become: yes
@@ -32,7 +33,7 @@
 
   - name: Prompt for storage device
     pause:
-      prompt: "Select partition to mount to {{ nfs_mount_point }}:\n{{ partitions_output.stdout }}: "
+      prompt: "Select partition to mount to {{ nfs_mount_point }}:\n{{ partitions_output.stdout }}\n\n Enter full partition-path (/dev/xxxx): "
     register: selected_device
 
   - name: Set the storage device
@@ -50,6 +51,12 @@
       fstype: "{{ fs_type.stdout }}"
       opts: defaults
       state: mounted
+
+  - name: Make the mount permanent on master
+    lineinfile:
+      path: /etc/fstab
+      line: "{{ selected_device.user_input }} /mnt/external_hdd {{ fs_type.stdout }} defaults 0 0"
+      state: present
 
   - name: Install NFS server on master nodes
     apt:
@@ -76,6 +83,7 @@
       state: restarted
       enabled: yes
 
+
 - name: install and setup nfs-client 
   hosts: workers
   become: yes
@@ -99,3 +107,9 @@
       fstype: nfs
       opts: defaults
       state: mounted
+    
+  - name: Make NFS mount permanent on worker nodes
+    lineinfile:
+      path: /etc/fstab
+      line: "{{ hostvars[groups['master'][0]].ansible_default_ipv4.address }}:/mnt/external_hdd /mnt/external_hdd nfs defaults 0 0"
+      state: present
