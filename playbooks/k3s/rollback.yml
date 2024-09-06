@@ -1,10 +1,3 @@
-#TODO
-
-#swapon
-#cgroup
-#uninstall
-#reboot
-
 ---
 - name: Include vars of from config.yml
   hosts: master, workers
@@ -61,21 +54,13 @@
   gather_facts: no
 
   tasks:
-    - name: Check if cgroup config is existing or not
-      shell: cat /boot/firmware/cmdline.txt | grep console
-      register: out
-      failed_when: false
-      changed_when: false
-
     - name: remove cgroup definition to setup raspberry-default
-      lineinfile:
+      replace:
         path: /boot/firmware/cmdline.txt
-        state: present
-        search_string: "{{ out.stdout }}"
-        line: "{{ rollout_config.raspbian_bootcmdline }}"
+        regexp: "cgroup_enable=cpu_set cgroup_memory=1 cgroup_enable=memory"
+        replace: ''
       become: true
       become_method: sudo
-      when: "'cgroup_memory=1 cgroup_enable=memory' in out.stdout"
 
     - name: Execute if not existing, reboot, and wait for {{ rollout_config.reboottime }} seconds
       shell: sleep 5 && shutdown -r now "Ansible Rebooting after cgroup configuration"
@@ -84,9 +69,7 @@
       ignore_unreachable: true
       become: true
       become_method: sudo
-      when: "'cgroup_memory=1 cgroup_enable=memory' in out.stdout"
 
     - name: Waiting for server to come back
       wait_for_connection:
         delay: "{{ rollout_config.reboottime }}"
-      when: "'cgroup_memory=1 cgroup_enable=memory' in out.stdout"
